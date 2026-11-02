@@ -12,6 +12,19 @@ main 发布 Windows **v0.2.0 稳定版**：PNG/JPG 导入、左右等比例预�
 
 **main 不包含独立放大查看或原图/结果切换。** 这些功能保留在 `feature/ui-preview` 开发分支，未作为本次稳定版本发布。Android 为独立探索，本仓库不包含 Android APK 或验证工程。
 
+## Android 移动端探索
+
+PixelGuard Mobile **v0.1.0** 使用 Qt Quick/QML，在小米13（Android16、arm64-v8a）上完成图片导入与预览验证。下图为此前真机运行截图，已检查不含账号、姓名或私人图片内容；查看器中的条纹图为程序生成的测试图片。
+
+<p align="center">
+  <img src="docs/images/android-home.png" width="280" alt="PixelGuard Mobile 真机图片导入主页">
+  <img src="docs/images/android-viewer.png" width="280" alt="PixelGuard Mobile 真机适应屏幕图片查看器">
+</p>
+
+已验证：系统文件选择器与 `content://` 读取、PNG/JPG、中文文件名、原始尺寸保留、透明 PNG 白底、适应屏幕查看和返回。独立 Android OpenCV 验证工程也已执行与 Windows 一致的四组算法基线。
+
+**正式移动应用目前仅接入导入和预览，尚未接入用户可操作的差异检测、统计、导出或分享。** Android 源码和 APK 仍在独立工程，本 Windows 仓库仅展示进展；以上截图不表示这些移动功能已经完成。
+
 ## 原理与架构
 
 ```text
