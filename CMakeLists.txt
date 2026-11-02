@@ -25,7 +25,7 @@ target_link_libraries(pixelguard_core PUBLIC ${OpenCV_LIBS})
 add_library(pixelguard_imageio src/ui/ImageIO.cpp)
 target_link_libraries(pixelguard_imageio PUBLIC pixelguard_core Qt6::Gui)
 
-add_library(pixelguard_widgets src/ui/MainWindow.cpp src/ui/ImagePreview.cpp src/ui/Theme.cpp)
+add_library(pixelguard_widgets src/ui/MainWindow.cpp src/ui/ImagePreview.cpp src/ui/ImageViewer.cpp src/ui/Theme.cpp)
 target_link_libraries(pixelguard_widgets PUBLIC pixelguard_imageio Qt6::Widgets)
 qt_add_resources(pixelguard_widgets pixelguard_theme PREFIX "/" FILES resources/theme.qss)
 
@@ -44,7 +44,7 @@ if(BUILD_TESTING)
     find_package(Qt6 6.10 REQUIRED COMPONENTS Test)
     add_executable(ui_tests tests/ui_tests.cpp)
     target_link_libraries(ui_tests PRIVATE pixelguard_widgets Qt6::Test)
-    add_test(NAME widgets_interaction COMMAND ui_tests)
+    add_test(NAME widgets_interaction COMMAND ui_tests "${CMAKE_CURRENT_SOURCE_DIR}/test_images")
     add_executable(real_screenshot_tests tests/real_screenshot_tests.cpp)
     target_link_libraries(real_screenshot_tests PRIVATE pixelguard_imageio)
     add_test(NAME real_screenshots COMMAND real_screenshot_tests

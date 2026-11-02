@@ -2,6 +2,11 @@
 #include "ui/ImageIO.h"
 #include "ui/ImagePreview.h"
 #include <QApplication>
+#include <QTabBar>
+#include <QSplitter>
+#include <QToolButton>
+#include "ui/DesignTokens.h"
+#include "ui/WorkbenchWidgets.h"
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -9,6 +14,8 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMessageBox>
+#include <QPainter>
+#include <QPainterPath>
 #include <QPushButton>
 #include <QSlider>
 #include <QSpinBox>
@@ -37,140 +44,209 @@ QImage displayImage(const cv::Mat& bgr)
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), lastDirectory_(QDir::homePath())
 {
     setObjectName("mainWindow");
-    setWindowTitle(QStringLiteral("PixelGuard — 界面视觉差异检测"));
-    resize(1180, 800);
-    setMinimumSize(920, 680);
+    setWindowTitle(QStringLiteral("PixelGuard — 图像比较工作台"));
+    resize(1280, 820);
+    setMinimumSize(920, 640);
     auto* root = new QWidget(this);
     root->setObjectName("page");
+    root->setFocusPolicy(Qt::StrongFocus);
+    root->setFocus();
     auto* rootLayout = new QVBoxLayout(root);
     rootLayout->setContentsMargins(0, 0, 0, 0);
     rootLayout->setSpacing(0);
     setCentralWidget(root);
 
     auto* header = new QFrame(root);
-    header->setObjectName("header");
+    header->setObjectName("appBar");
     auto* headerLayout = new QHBoxLayout(header);
-    headerLayout->setContentsMargins(28, 20, 28, 20);
-    auto* brandLayout = new QVBoxLayout;
-    brandLayout->setSpacing(4);
-    brandLayout->addWidget(label("PixelGuard", "brand"));
-    brandLayout->addWidget(label(QStringLiteral("软件界面视觉差异检测 · 对比、定位、验证"), "subtitle"));
-    headerLayout->addLayout(brandLayout);
+    headerLayout->setContentsMargins(design::Margin, design::Small, design::Margin, design::Small);
+    headerLayout->setSpacing(design::Gap);
+    auto* mark = new QLabel;
+    mark->setPixmap(workbenchIcon(Glyph::Compare, QColor(design::Accent)).pixmap(22, 22));
+    headerLayout->addWidget(mark);
+    headerLayout->addWidget(label("PixelGuard", "brand"));
+    headerLayout->addWidget(label(QStringLiteral("/  图像比较"), "workspaceTitle"));
     headerLayout->addStretch();
-    headerLayout->addWidget(label(QStringLiteral("Windows  /  OpenCV %1").arg(CV_VERSION), "version"));
+    headerLayout->addWidget(label(QStringLiteral("本地处理 · 原始分辨率"), "privacyNote"));
     rootLayout->addWidget(header);
-    auto* body = new QVBoxLayout;
-    body->setContentsMargins(24, 20, 24, 20);
-    body->setSpacing(16);
-    rootLayout->addLayout(body, 1);
 
     auto* tools = new QFrame;
     tools->setObjectName("controls");
     auto* toolsLayout = new QHBoxLayout(tools);
-    toolsLayout->setContentsMargins(20, 16, 20, 16);
-    toolsLayout->setSpacing(14);
-    auto* thresholdLayout = new QVBoxLayout;
-    thresholdLayout->setSpacing(6);
-    auto* thresholdRow = new QHBoxLayout;
+    toolsLayout->setContentsMargins(design::Margin, design::Gap, design::Margin, design::Gap);
+    toolsLayout->setSpacing(design::Gap);
     auto* thresholdLabel = label(QStringLiteral("差异阈值"), "sectionLabel");
-    thresholdRow->addWidget(thresholdLabel);
+    toolsLayout->addWidget(thresholdLabel);
     thresholdSlider_ = new QSlider(Qt::Horizontal);
     thresholdSlider_->setObjectName("thresholdSlider");
     thresholdSlider_->setRange(0, 255);
     thresholdSlider_->setValue(20);
-    thresholdSlider_->setMinimumWidth(150);
+    thresholdSlider_->setFixedWidth(144);
     thresholdSlider_->setAccessibleName(QStringLiteral("差异阈值滑块"));
-    thresholdRow->addWidget(thresholdSlider_, 1);
+    thresholdSlider_->setToolTip(QStringLiteral("0–255；值越小越敏感。调整后旧结果失效，需重新检测。"));
+    toolsLayout->addWidget(thresholdSlider_);
     thresholdSpin_ = new QSpinBox;
     thresholdSpin_->setObjectName("thresholdSpin");
     thresholdSpin_->setRange(0, 255);
     thresholdSpin_->setValue(20);
-    thresholdSpin_->setFixedWidth(76);
+    thresholdSpin_->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    thresholdSpin_->setAlignment(Qt::AlignCenter);
+    thresholdSpin_->setFixedSize(60, design::Control);
     thresholdSpin_->setAccessibleName(QStringLiteral("差异阈值"));
+    thresholdSpin_->setToolTip(thresholdSlider_->toolTip());
     thresholdLabel->setBuddy(thresholdSpin_);
-    thresholdRow->addWidget(thresholdSpin_);
-    thresholdLayout->addLayout(thresholdRow);
-    thresholdLayout->addWidget(label(QStringLiteral("值越小越敏感；修改后需重新检测。"), "hint"));
-    toolsLayout->addLayout(thresholdLayout, 1);
-    toolsLayout->addSpacing(20);
+    toolsLayout->addWidget(thresholdSpin_);
+    toolsLayout->addWidget(label(QStringLiteral("越小越敏感"), "thresholdHint"));
+    toolsLayout->addStretch();
     detectButton_ = new QPushButton(QStringLiteral("开始检测"));
     detectButton_->setObjectName("detectButton");
-    detectButton_->setMinimumWidth(124);
+    detectButton_->setIcon(workbenchIcon(Glyph::Compare, QColor(design::Raised)));
+    detectButton_->setFixedHeight(design::Control);
     detectButton_->setToolTip(QStringLiteral("比较同尺寸、已对齐的两张图片"));
     saveButton_ = new QPushButton(QStringLiteral("保存结果"));
     saveButton_->setObjectName("saveButton");
-    saveButton_->setMinimumWidth(116);
-    saveButton_->setToolTip(QStringLiteral("保存带红框的原始分辨率图片"));
+    saveButton_->setIcon(workbenchIcon(Glyph::Export));
+    saveButton_->setFixedHeight(design::Control);
+    saveButton_->setToolTip(QStringLiteral("保存带红框的原始分辨率图片；不受当前查看模式影响"));
     toolsLayout->addWidget(detectButton_);
     toolsLayout->addWidget(saveButton_);
-    body->addWidget(tools);
+    rootLayout->addWidget(tools);
 
-    auto* previews = new QHBoxLayout;
-    previews->setSpacing(16);
-    auto createCard = [&](bool baseline) {
-        auto* card = new QFrame;
-        card->setProperty("role", "previewCard");
-        auto* layout = new QVBoxLayout(card);
-        layout->setContentsMargins(20, 16, 20, 16);
-        layout->setSpacing(10);
-        auto* heading = new QHBoxLayout;
+    auto* split = new QSplitter(Qt::Horizontal);
+    split->setObjectName("imageSplitter");
+    split->setChildrenCollapsible(false);
+    split->setHandleWidth(design::Unit);
+    auto createPane = [&](bool baseline) {
+        auto* pane = new QFrame;
+        pane->setProperty("role", "imagePane");
+        pane->setMinimumWidth(340);
+        auto* layout = new QVBoxLayout(pane);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(0);
+        auto* fileHeader = new QFrame;
+        fileHeader->setProperty("role", "fileHeader");
+        auto* fileLayout = new QVBoxLayout(fileHeader);
+        fileLayout->setContentsMargins(design::Margin, design::Gap, design::Margin, design::Gap);
+        fileLayout->setSpacing(design::Small);
+        auto* identity = new QHBoxLayout;
+        identity->setSpacing(design::Small);
+        auto* role = label(baseline ? "A" : "B", baseline ? "baselineBadge" : "candidateBadge");
+        role->setProperty("role", "identityBadge");
+        role->setAlignment(Qt::AlignCenter);
+        role->setFixedSize(22,22);
+        identity->addWidget(role);
         auto* title = label(baseline ? QStringLiteral("基准图片") : QStringLiteral("待检测图片"),
                             baseline ? "baselineTitle" : "candidateTitle");
-        title->setProperty("role", "cardTitle");
-        heading->addWidget(title);
-        heading->addStretch();
-        auto* importButton = new QPushButton(baseline ? QStringLiteral("导入基准图") : QStringLiteral("导入待检测图"));
-        importButton->setObjectName(baseline ? "importBaselineButton" : "importCandidateButton");
-        heading->addWidget(importButton);
-        layout->addLayout(heading);
-        auto* preview = new ImagePreview(baseline ? QStringLiteral("导入基准图片\nPNG / JPG") :
-                                                                  QStringLiteral("导入待检测图片\n检测后将在此显示红框结果"));
-        preview->setProperty("role", "imagePreview");
-        preview->setObjectName(baseline ? "baselinePreview" : "candidatePreview");
-        layout->addWidget(preview, 1);
-        auto* info = label(QStringLiteral("尚未导入图片"), baseline ? "baselineInfo" : "candidateInfo");
-        info->setProperty("role", "imageInfo");
-        info->setWordWrap(true);
-        info->setMinimumHeight(40);
-        layout->addWidget(info);
-        if (baseline) { baselinePreview_ = preview; baselineInfo_ = info; }
-        else { candidatePreview_ = preview; candidateInfo_ = info; candidateTitle_ = title; }
-        connect(importButton, &QPushButton::clicked, this, [this, baseline] { importImage(baseline); });
-        previews->addWidget(card, 1);
-    };
-    createCard(true);
-    createCard(false);
-    body->addLayout(previews, 1);
+        title->setProperty("role", "paneTitle");
+        identity->addWidget(title);
+        identity->addStretch();
+        auto* import = new QPushButton(baseline ? QStringLiteral("导入基准图") : QStringLiteral("导入待检测图"));
+        import->setObjectName(baseline ? "importBaselineButton" : "importCandidateButton");
+        import->setIcon(workbenchIcon(Glyph::Import));
+        import->setProperty("kind", "quiet");
+        import->setFixedHeight(design::Compact);
+        identity->addWidget(import);
+        fileLayout->addLayout(identity);
+        auto* info = new ElidedLabel(QStringLiteral("尚未导入图片"));
+        info->setObjectName(baseline ? "baselineInfo" : "candidateInfo");
+        info->setProperty("role", "fileInfo");
+        info->setTextFormat(Qt::PlainText);
+        info->setFixedHeight(20);
+        fileLayout->addWidget(info);
+        layout->addWidget(fileHeader);
 
-    auto* statistics = new QFrame;
-    statistics->setObjectName("statistics");
-    auto* statsLayout = new QHBoxLayout(statistics);
-    statsLayout->setContentsMargins(20, 14, 20, 14);
-    statsLayout->setSpacing(18);
-    statsLayout->addWidget(label(QStringLiteral("差异区域"), "regionsCaption"));
-    regionValue_ = label(QStringLiteral("—"), "regionValue");
-    regionValue_->setProperty("role", "metric");
-    statsLayout->addWidget(regionValue_);
-    statsLayout->addSpacing(28);
-    statsLayout->addWidget(label(QStringLiteral("变化像素"), "ratioCaption"));
-    ratioValue_ = label(QStringLiteral("—"), "ratioValue");
-    ratioValue_->setProperty("role", "metric");
-    statsLayout->addWidget(ratioValue_);
-    statsLayout->addStretch();
-    statsLayout->addWidget(label(QStringLiteral("红框定位变化 · 原始分辨率导出"), "resultHint"));
-    body->addWidget(statistics);
+        auto* viewBar = new QFrame;
+        viewBar->setProperty("role", "viewBar");
+        auto* viewLayout = new QHBoxLayout(viewBar);
+        viewLayout->setContentsMargins(design::Margin, design::Unit, design::Gap, design::Unit);
+        viewLayout->setSpacing(design::Small);
+        if (baseline) {
+            viewLayout->addWidget(label(QStringLiteral("参考原图"), "baselineViewHint"));
+        } else {
+            resultMode_ = new QTabBar;
+            resultMode_->setObjectName("resultMode");
+            resultMode_->addTab(QStringLiteral("待检测原图"));
+            resultMode_->addTab(QStringLiteral("红框结果"));
+            resultMode_->setDrawBase(false);
+            resultMode_->setExpanding(false);
+            resultMode_->setEnabled(false);
+            resultMode_->setAccessibleName(QStringLiteral("右侧显示内容"));
+            resultMode_->setToolTip(QStringLiteral("仅切换显示，不重新检测。导出始终保存红框结果。"));
+            viewLayout->addWidget(resultMode_);
+            connect(resultMode_, &QTabBar::currentChanged, this, [this] { updateCandidatePreview(); });
+        }
+        viewLayout->addStretch();
+        auto* zoom = new QToolButton;
+        zoom->setText(QStringLiteral("放大查看"));
+        zoom->setIcon(workbenchIcon(Glyph::Expand));
+        zoom->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        zoom->setObjectName(baseline ? "baselineZoomButton" : "candidateZoomButton");
+        zoom->setAccessibleName(baseline ? QStringLiteral("放大基准图片") : QStringLiteral("放大当前待检测图片"));
+        zoom->setToolTip(QStringLiteral("打开独立预览 · 滚轮缩放 · 拖动查看"));
+        zoom->setFixedHeight(design::Compact);
+        zoom->setEnabled(false);
+        viewLayout->addWidget(zoom);
+        layout->addWidget(viewBar);
+        auto* preview = new ImagePreview(baseline ? QStringLiteral("导入基准图片") : QStringLiteral("导入待检测图片"));
+        preview->setObjectName(baseline ? "baselinePreview" : "candidatePreview");
+        preview->setProperty("side", baseline ? "baseline" : "candidate");
+        layout->addWidget(preview, 1);
+        connect(zoom, &QToolButton::clicked, preview, &ImagePreview::openPreview);
+        connect(import, &QPushButton::clicked, this, [this, baseline] { importImage(baseline); });
+        if (baseline) { baselinePreview_ = preview; baselineInfo_ = info; baselineZoom_ = zoom; }
+        else { candidatePreview_ = preview; candidateInfo_ = info; candidateTitle_ = title; candidateZoom_ = zoom; }
+        split->addWidget(pane);
+    };
+    createPane(true);
+    createPane(false);
+    split->setSizes({640,640});
+    rootLayout->addWidget(split, 1);
+
+    auto* results = new QFrame;
+    results->setObjectName("resultBar");
+    auto* resultLayout = new QHBoxLayout(results);
+    resultLayout->setContentsMargins(design::Margin, design::Gap, design::Margin, design::Gap);
+    resultLayout->setSpacing(design::Large);
+    auto metric = [&](const QString& caption, const char* valueName) {
+        auto* group = new QVBoxLayout;
+        group->setSpacing(design::Unit);
+        auto* captionLabel = label(caption, "metricCaption");
+        captionLabel->setProperty("role", "metricCaption");
+        group->addWidget(captionLabel);
+        auto* value = label(QStringLiteral("—"), valueName);
+        value->setProperty("role", "metric");
+        value->setProperty("result", "empty");
+        group->addWidget(value);
+        resultLayout->addLayout(group);
+        return value;
+    };
+    regionValue_ = metric(QStringLiteral("差异区域"), "regionValue");
+    ratioValue_ = metric(QStringLiteral("变化像素占比"), "ratioValue");
+    auto* separator = new QFrame;
+    separator->setProperty("role", "verticalSeparator");
+    separator->setFixedWidth(1);
+    resultLayout->addWidget(separator);
     status_ = label({}, "statusLabel");
     status_->setWordWrap(true);
-    status_->setMinimumHeight(42);
-    body->addWidget(status_);
-    body->addWidget(label(QStringLiteral("仅比较同尺寸、已对齐的图片；不进行自动配准或尺寸拉伸。"), "footer"));
+    auto* resultStatus = new QVBoxLayout;
+    resultStatus->setSpacing(design::Unit);
+    stateLabel_ = label({}, "resultState");
+    resultStatus->addWidget(stateLabel_);
+    resultStatus->addWidget(status_);
+    resultLayout->addLayout(resultStatus, 1);
+    rootLayout->addWidget(results);
+    auto* footer = new QFrame;
+    footer->setObjectName("statusBar");
+    auto* footerLayout = new QHBoxLayout(footer);
+    footerLayout->setContentsMargins(design::Margin, design::Unit, design::Margin, design::Unit);
+    footerLayout->addWidget(label(QStringLiteral("仅比较同尺寸、已对齐的图片"), "footer"));
+    footerLayout->addStretch();
+    footerLayout->addWidget(label(QStringLiteral("PNG / JPG  ·  本地检测"), "formatHint"));
+    rootLayout->addWidget(footer);
 
     connect(thresholdSlider_, &QSlider::valueChanged, thresholdSpin_, &QSpinBox::setValue);
     connect(thresholdSpin_, &QSpinBox::valueChanged, thresholdSlider_, &QSlider::setValue);
-    connect(thresholdSpin_, &QSpinBox::valueChanged, this, [this] {
-        clearResult();
-        updateAvailability();
-    });
+    connect(thresholdSpin_, &QSpinBox::valueChanged, this, [this] { clearResult(); updateAvailability(); });
     connect(detectButton_, &QPushButton::clicked, this, [this] { detect(); });
     connect(saveButton_, &QPushButton::clicked, this, [this] { saveResult(); });
     updateAvailability();
@@ -182,6 +258,13 @@ bool MainWindow::imagesMatch() const
 }
 void MainWindow::setStatus(const QString& text, bool error)
 {
+    const bool processing = text.startsWith(QStringLiteral("正在检测"));
+    stateLabel_->setText(error ? QStringLiteral("需要处理") : processing ? QStringLiteral("正在检测") :
+        hasResult_ ? (result_.changedRatio > 0 ? QStringLiteral("发现差异") : QStringLiteral("未发现有效差异")) :
+        imagesMatch() ? QStringLiteral("准备就绪") : QStringLiteral("等待图片"));
+    stateLabel_->setProperty("state", error ? "error" : processing ? "processing" :
+        hasResult_ ? (result_.changedRatio > 0 ? "difference" : "same") : "idle");
+    stateLabel_->style()->unpolish(stateLabel_); stateLabel_->style()->polish(stateLabel_);
     status_->setText(text);
     status_->setProperty("error", error);
     status_->style()->unpolish(status_);
@@ -199,11 +282,28 @@ void MainWindow::clearResult()
 {
     hasResult_ = false;
     result_ = {};
+    resultDisplay_ = {};
+    resultMode_->setEnabled(false);
+    resultMode_->setCurrentIndex(0);
     saveButton_->setEnabled(false);
     regionValue_->setText(QStringLiteral("—"));
     ratioValue_->setText(QStringLiteral("—"));
+    for (auto* value : {regionValue_, ratioValue_}) {
+        value->setProperty("result", "empty");
+        value->style()->unpolish(value); value->style()->polish(value);
+    }
+    updateCandidatePreview();
+    baselineZoom_->setEnabled(!baseline_.empty());
+    candidateZoom_->setEnabled(!candidate_.empty());
+    // Close any snapshot based on the previous inputs or threshold.
+    baselinePreview_->setImage(baselinePreview_->image(), baselineName_);
+}
+void MainWindow::updateCandidatePreview()
+{
+    const bool annotated = hasResult_ && resultMode_->currentIndex() == 1;
     candidateTitle_->setText(QStringLiteral("待检测图片"));
-    candidatePreview_->setImage(displayImage(candidate_));
+    candidatePreview_->setImage(annotated ? resultDisplay_ : candidateDisplay_,
+        candidateName_ + (annotated ? QStringLiteral(" · 红框标注结果") : QString()));
 }
 void MainWindow::updateAvailability()
 {
@@ -227,13 +327,16 @@ void MainWindow::importImage(bool baseline)
         cv::Mat loaded = pixelguard::loadImage(path);
         const QImage preview = displayImage(loaded);
         auto* info = baseline ? baselineInfo_ : candidateInfo_;
-        info->setText(QStringLiteral("%1\n%2 × %3 像素")
+        info->setText(QStringLiteral("%1  ·  %2 × %3 px")
             .arg(QFileInfo(path).fileName()).arg(loaded.cols).arg(loaded.rows));
         info->setToolTip(path);
         if (baseline) {
+            baselineName_ = QFileInfo(path).fileName();
             baseline_ = std::move(loaded);
-            baselinePreview_->setImage(preview);
+            baselinePreview_->setImage(preview, baselineName_);
         } else {
+            candidateName_ = QFileInfo(path).fileName();
+            candidateDisplay_ = preview;
             candidate_ = std::move(loaded);
         }
         lastDirectory_ = QFileInfo(path).absolutePath();
@@ -250,26 +353,43 @@ void MainWindow::detect()
 {
     if (!imagesMatch()) return;
     clearResult();
+    auto processing = [this](bool busy) {
+        detectButton_->setText(busy ? QStringLiteral("检测中…") : QStringLiteral("开始检测"));
+        detectButton_->setEnabled(!busy && imagesMatch());
+        thresholdSlider_->setEnabled(!busy);
+        thresholdSpin_->setEnabled(!busy);
+        findChild<QPushButton*>("importBaselineButton")->setEnabled(!busy);
+        findChild<QPushButton*>("importCandidateButton")->setEnabled(!busy);
+        setProperty("processing", busy);
+    };
     setStatus(QStringLiteral("正在检测，请稍候…"));
-    status_->repaint();
+    processing(true);
+    repaint();
     QApplication::setOverrideCursor(Qt::WaitCursor);
     try {
         const auto result = pixelguard::detectDifferences(baseline_, candidate_, {thresholdSpin_->value(), 8});
         const auto preview = displayImage(result.annotated);
         result_ = result;
         hasResult_ = true;
-        candidatePreview_->setImage(preview);
-        candidateTitle_->setText(QStringLiteral("检测结果 · 红框标记"));
+        resultDisplay_ = preview;
+        resultMode_->setEnabled(true);
+        resultMode_->setCurrentIndex(1);
         regionValue_->setText(QString::number(result_.regions.size()));
         ratioValue_->setText(result_.changedRatio == 0 ? QStringLiteral("0%") :
                              QStringLiteral("%1%").arg(result_.changedRatio * 100.0, 0, 'f', 4));
         saveButton_->setEnabled(true);
+        for (auto* value : {regionValue_, ratioValue_}) {
+            value->setProperty("result", result_.changedRatio > 0 ? "difference" : "same");
+            value->style()->unpolish(value); value->style()->polish(value);
+        }
         setStatus(result_.regions.empty() ? QStringLiteral("检测完成 · 当前阈值下未发现有效差异，可以保存结果。") :
             QStringLiteral("检测完成 · 发现 %1 个差异区域，右图已用红框标记。可保存完整分辨率结果。")
                 .arg(result_.regions.size()));
         QApplication::restoreOverrideCursor();
+        processing(false);
     } catch (const std::exception& error) {
         QApplication::restoreOverrideCursor();
+        processing(false);
         clearResult();
         showError(QStringLiteral("检测失败"), QStringLiteral("图像检测未完成，请检查图片或尝试较小的图片。"),
                   QString::fromUtf8(error.what()));
